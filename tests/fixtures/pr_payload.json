@@ -1,0 +1,14 @@
+{
+  "action": "opened",
+  "number": 1,
+  "pull_request": {
+    "number": 1,
+    "title": "Test PR",
+    "head": { "sha": "abc123def456" }
+  },
+  "repository": {
+    "name": "sportscheduler",
+    "owner": { "login": "MaheshRaghava" }
+  },
+  "installation": { "id": 12345678 }
+}
