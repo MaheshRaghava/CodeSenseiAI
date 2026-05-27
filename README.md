@@ -4,6 +4,14 @@ An AI-powered GitHub App that automatically reviews pull requests using Google G
 
 ---
 
+## 🔗 Live Demo
+
+**Frontend:** https://codesenseiai-gold.vercel.app
+
+**Backend API:** https://codesenseiai.onrender.com
+
+---
+
 ## Demo
 
 > Open a pull request → CodeSenseiAI reviews it automatically with inline comments
