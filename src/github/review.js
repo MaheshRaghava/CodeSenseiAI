@@ -93,31 +93,6 @@ export async function postReview({
   const { data: pr } = await octokit.pulls.get({ owner, repo, pull_number });
   const commitId = pr.head.sha;
 
-  // ============================================================
-  // Post summary comment at the top of the PR
-  // This appears regardless of whether inline comments succeed
-  // ============================================================
-  const counts = ['critical', 'major', 'minor', 'style']
-    .map(s => {
-      const count = comments.filter(c => c.severity === s).length;
-      return count ? `${SEVERITY_EMOJI[s]} ${count} ${s.charAt(0).toUpperCase() + s.slice(1)}` : null;
-    })
-    .filter(Boolean)
-    .join(' · ');
-
-  await octokit.issues.createComment({
-    owner,
-    repo,
-    issue_number: pull_number,
-    body: `## 🤖 CodeSenseiAI Review Complete\n\n**Summary:** ${counts}\n\n<sub>Powered by Gemini 2.5 Flash</sub>`,
-  });
-
-  logger.info(`✅ Posted summary comment on PR #${pull_number} with counts: ${counts}`);
-
-  // ============================================================
-  // Continue with inline comments
-  // ============================================================
-
   const validComments = [];
   const skipped = [];
 
@@ -149,7 +124,7 @@ export async function postReview({
     });
   }
 
-  // Try batch first — fastest path
+  // Try batch first
   if (validComments.length > 0) {
     try {
       await octokit.pulls.createReview({
@@ -161,13 +136,13 @@ export async function postReview({
         comments: validComments.map(({ _original, ...rest }) => rest),
       });
       logger.info(`✅ Posted ${validComments.length} inline comments on PR #${pull_number}`);
-      return; // success — done
+      return;
     } catch (batchErr) {
       logger.warn(`Batch inline failed: ${batchErr.message} — trying one by one...`);
     }
   }
 
-  // Batch failed — try each comment individually
+  // Batch failed — try individually
   const stillSkipped = [];
 
   for (const vc of validComments) {
@@ -187,23 +162,11 @@ export async function postReview({
     }
   }
 
-  // Anything still failing + originally skipped → fallback body comment
   const allSkipped = [...skipped, ...stillSkipped];
 
   if (allSkipped.length > 0) {
-    const fallbackSummaryLine = ['critical', 'major', 'minor', 'style']
-      .map(s => {
-        const count = allSkipped.filter(c => c.severity === s).length;
-        return count
-          ? `${SEVERITY_EMOJI[s]} ${count} ${s.charAt(0).toUpperCase() + s.slice(1)}`
-          : null;
-      })
-      .filter(Boolean)
-      .join(' · ');
-
     const body = [
-      `## 🤖 CodeSenseiAI Review — Additional Notes`,
-      `**Summary:** ${fallbackSummaryLine}`,
+      `## 🤖 CodeSenseiAI — Additional Review Notes`,
       ``,
       `---`,
       ``,

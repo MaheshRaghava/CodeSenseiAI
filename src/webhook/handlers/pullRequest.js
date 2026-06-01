@@ -16,18 +16,55 @@ const SKIP_FILES = [
   'README.md',
 ];
 
-async function postStartComment({ installationId, owner, repo, pull_number }) {
+async function postStartComment({ octokit, owner, repo, pull_number }) {
   try {
-    const octokit = await getInstallationOctokit(installationId);
-    await octokit.issues.createComment({
+    const { data } = await octokit.issues.createComment({
       owner,
       repo,
       issue_number: pull_number,
-      body: `## 🤖 CodeSenseiAI is reviewing this PR...\n\n> Analyzing code for security vulnerabilities, bugs, and bad practices. Results will appear as inline comments in a few seconds.\n\n<sub>Powered by Gemini 2.5 Flash</sub>`,
+      body: `## 🤖 CodeSenseiAI is reviewing this PR...\n\n> Analyzing code for security vulnerabilities, bugs, and bad practices. Inline comments will appear shortly.\n\n<sub>Powered by Gemini 2.5 Flash</sub>`,
+    });
+    return data.id;
+  } catch (err) {
+    logger.warn(`Could not post start comment: ${err.message}`);
+    return null;
+  }
+}
+
+async function updateStartComment({ octokit, owner, repo, commentId, comments }) {
+  if (!commentId) return;
+
+  const SEVERITY_EMOJI = { critical:'🔴', major:'🟠', minor:'🟡', style:'🔵' };
+
+  try {
+    if (!comments || comments.length === 0) {
+      await octokit.issues.updateComment({
+        owner,
+        repo,
+        comment_id: commentId,
+        body: `## ✅ CodeSenseiAI Review Complete\n\n**No issues found** — this PR looks clean!\n\n<sub>Powered by Gemini 2.5 Flash</sub>`,
+      });
+      return;
+    }
+
+    const summaryLine = ['critical','major','minor','style']
+      .map(s => {
+        const count = comments.filter(c => c.severity === s).length;
+        return count
+          ? `${SEVERITY_EMOJI[s]} ${count} ${s.charAt(0).toUpperCase()+s.slice(1)}`
+          : null;
+      })
+      .filter(Boolean)
+      .join(' · ');
+
+    await octokit.issues.updateComment({
+      owner,
+      repo,
+      comment_id: commentId,
+      body: `## 🤖 CodeSenseiAI Review Complete\n\n**Summary:** ${summaryLine}\n\n<sub>Powered by Gemini 2.5 Flash</sub>`,
     });
   } catch (err) {
-    // Non-critical — don't let this block the actual review
-    logger.warn(`Could not post start comment: ${err.message}`);
+    logger.warn(`Could not update start comment: ${err.message}`);
   }
 }
 
@@ -41,8 +78,10 @@ export async function handlePullRequest(payload) {
 
   logger.info(`Handling PR #${pull_number} — "${pull_request.title}"`);
 
-  // Post immediately
-  await postStartComment({ installationId, owner, repo, pull_number });
+  const octokit = await getInstallationOctokit(installationId);
+
+  // Post "reviewing..."
+  const commentId = await postStartComment({ octokit, owner, repo, pull_number });
 
   const { files } = await getPRDiff({
     installationId,
@@ -53,6 +92,7 @@ export async function handlePullRequest(payload) {
 
   if (!files || files.length === 0) {
     logger.warn('No files found in PR');
+    await updateStartComment({ octokit, owner, repo, commentId, comments: [] });
     return;
   }
 
@@ -61,28 +101,18 @@ export async function handlePullRequest(payload) {
 
   if (!structuredDiff || structuredDiff.trim() === '') {
     logger.info('Nothing to review after filtering');
+    await updateStartComment({ octokit, owner, repo, commentId, comments: [] });
     return;
   }
 
   const raw = await analyzeDiff(structuredDiff);
   const comments = parseReview(raw);
 
+  // Update the same comment
+  await updateStartComment({ octokit, owner, repo, commentId, comments });
+
   if (comments.length === 0) {
     logger.info('No issues found — PR looks clean');
-
-    // Update the start comment to show clean result
-    try {
-      const octokit = await getInstallationOctokit(installationId);
-      await octokit.issues.createComment({
-        owner,
-        repo,
-        issue_number: pull_number,
-        body: `## ✅ CodeSenseiAI Review Complete\n\n**No issues found** — this PR looks clean!\n\n<sub>Powered by Gemini 2.5 Flash</sub>`,
-      });
-    } catch (err) {
-      logger.warn(`Could not post clean comment: ${err.message}`);
-    }
-
     return;
   }
 
