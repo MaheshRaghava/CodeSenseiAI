@@ -17,15 +17,17 @@ export function parseReview(raw) {
     }
 
     const valid = parsed.filter(item => {
-      const ok = item.file && item.start_line && item.comment;
+      const hasLine = item.start_line !== undefined || item.line !== undefined;
+      const ok = item.file && hasLine && item.comment;
       if (!ok) logger.warn({ item }, 'Skipping invalid comment item');
       return ok;
     });
 
     return valid.map(item => ({
       file: item.file,
-      start_line: item.start_line,
-      end_line: item.end_line || item.start_line,
+      // Fix 2 — fallback chain: start_line → line → 1
+      start_line: item.start_line ?? item.line ?? 1,
+      end_line: item.end_line ?? item.start_line ?? item.line ?? 1,
       severity: item.severity || 'minor',
       category: item.category || 'General',
       title: item.title || 'Code Issue',
